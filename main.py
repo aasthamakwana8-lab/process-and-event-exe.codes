@@ -3,8 +3,7 @@ import time
 from collector.process_collector import collect_process_events
 from utils.json_writer import write_json
 
-previous_pids = set()
-
+known_processes = {}
 try:
 
     while True:
@@ -12,114 +11,60 @@ try:
         print("\nCollecting Process Data...")
 
         data = collect_process_events()
+        current_processes = {
+            event["pid"]: event
+            for event in data
+        }
+        new_pids = (
+            current_processes.keys()
+            - known_processes.keys()
+        )
 
-        current_pids = set()
-
-        for event in data:
-
-            current_pids.add(
-                event["pid"]
+        ended_pids = (
+            known_processes.keys()
+            - current_processes.keys()
+        )
+        events_to_write = []
+        for pid in new_pids:
+            process_event = current_processes[pid]
+            process_event["event_type"] = (
+            "PROCESS_START"
             )
-
-        new_processes = (
-            current_pids -
-            previous_pids
-        )
-
-        ended_processes = (
-            previous_pids -
-            current_pids
-        )
+            events_to_write.append(
+                process_event
+            )
+        for pid in ended_pids:
+            process_event = known_processes[pid]
+            process_event["event_type"] = (
+            "PROCESS_END"
+            )
+            events_to_write.append(
+                process_event
+            )
 
         print(
             "Started:",
-            len(new_processes)
+            len(new_pids)
         )
 
         print(
             "Ended:",
-            len(ended_processes)
+            len(ended_pids)
         )
-
-        previous_pids = current_pids
 
         print(
-            f"Writing {len(data)} events..."
-        )
+            f"Writing {len(events_to_write)} events..."
+        )       
 
         write_json(
-            data,
+            events_to_write,
             "output/events.json"
         )
-
+        known_processes = current_processes
         print("Updated")
 
         time.sleep(3)
 
 except KeyboardInterrupt:
 
-    print(
-        "\nMonitoring Stopped"
-import time
-
-from collector.process_collector import collect_process_events
-from utils.json_writer import write_json
-
-previous_pids = set()
-
-try:
-
-    while True:
-
-        print("\nCollecting Process Data...")
-
-        data = collect_process_events()
-
-        current_pids = set()
-
-        for event in data:
-
-            current_pids.add(
-                event["pid"]
-            )
-
-        new_processes = (
-            current_pids -
-            previous_pids
-        )
-
-        ended_processes = (
-            previous_pids -
-            current_pids
-        )
-
-        print(
-            "Started:",
-            len(new_processes)
-        )
-
-        print(
-            "Ended:",
-            len(ended_processes)
-        )
-
-        previous_pids = current_pids
-
-        print(
-            f"Writing {len(data)} events..."
-        )
-
-        write_json(
-            data,
-            "output/events.json"
-        )
-
-        print("Updated")
-
-        time.sleep(3)
-
-except KeyboardInterrupt:
-
-    print(
-        "\nMonitoring Stopped"
-    )
+    print("\nMonitoring Stopped")
