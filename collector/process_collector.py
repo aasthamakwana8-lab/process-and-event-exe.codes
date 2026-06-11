@@ -1,4 +1,5 @@
 import psutil
+import time
 
 from collector.hash_collector import calculate_sha256
 from collector.parent_chain import get_parent_info
@@ -25,7 +26,9 @@ SUSPICIOUS_PROCESSES = [
     "rundll32.exe",
     "regsvr32.exe"
 ]
+
 hash_cache = {}
+
 
 def collect_process_events():
 
@@ -36,12 +39,26 @@ def collect_process_events():
         try:
 
             path = process.exe()
+
             if path in hash_cache:
+
                 sha256_hash = hash_cache[path]
+
             else:
+
                 sha256_hash = calculate_sha256(path)
+
                 hash_cache[path] = sha256_hash
+
             process_name = process.name()
+
+            runtime_minutes = round(
+                (
+                    time.time()
+                    - process.create_time()
+                ) / 60,
+                2
+            )
 
             privilege = get_privilege(
                 process
@@ -56,7 +73,10 @@ def collect_process_events():
             )
 
             risk_score = 0
+
             alerts = []
+
+            correlation_rules = []
 
             # PowerShell Detection
             if is_ps:
@@ -83,7 +103,7 @@ def collect_process_events():
             # Network Activity Detection
             if len(connections) > 0:
 
-                risk_score += 15
+                risk_score += 5
 
             # Suspicious Binary Detection
             if process_name.lower() in SUSPICIOUS_PROCESSES:
@@ -94,8 +114,76 @@ def collect_process_events():
                     "SUSPICIOUS_PROCESS"
                 )
 
+            # ==========================
+            # Correlation Rules
+            # ==========================
+
+            # Elevated PowerShell
+            if (
+                is_ps
+                and privilege.upper() in [
+                    "ADMIN",
+                    "ADMINISTRATOR",
+                    "SYSTEM"
+                ]
+            ):
+
+                correlation_rules.append(
+                    "ELEVATED_POWERSHELL"
+                )
+
+                risk_score += 20
+
+            # PowerShell Network Activity
+            if (
+                is_ps
+                and len(connections) > 0
+            ):
+
+                correlation_rules.append(
+                    "POWERSHELL_NETWORK_ACTIVITY"
+                )
+
+                risk_score += 15
+
+            # Long Running LOLBin
+            if (
+                process_name.lower()
+                in SUSPICIOUS_PROCESSES
+                and runtime_minutes >= 60
+            ):
+
+                correlation_rules.append(
+                    "LONG_RUNNING_LOLBIN"
+                )
+
+                risk_score += 15
+
+            # Privileged LOLBin
+            if (
+                process_name.lower()
+                in SUSPICIOUS_PROCESSES
+                and privilege.upper() in [
+                    "ADMIN",
+                    "ADMINISTRATOR",
+                    "SYSTEM"
+                ]
+            ):
+
+                correlation_rules.append(
+                    "PRIVILEGED_LOLBIN"
+                )
+
+                risk_score += 20
+
+            # Cap Risk
+            risk_score = min(
+                risk_score,
+                100
+            )
+
             # Risk Classification
-            if risk_score >= 70:
+            if risk_score >= 80:
 
                 risk_level = "HIGH"
 
@@ -151,6 +239,9 @@ def collect_process_events():
                     process
                 ),
 
+                "runtime_minutes":
+                runtime_minutes,
+
                 "ancestors":
                 get_ancestor_chain(
                     process
@@ -166,6 +257,7 @@ def collect_process_events():
                 connections,
 
                 "risk": {
+
                     "score":
                     risk_score,
 
@@ -174,7 +266,10 @@ def collect_process_events():
                 },
 
                 "alerts":
-                alerts
+                alerts,
+
+                "correlation_rules":
+                correlation_rules
             }
 
             event.update(
@@ -210,7 +305,6 @@ def collect_process_events():
 
                     "error":
                     str(e)
-
                 })
 
             except:
