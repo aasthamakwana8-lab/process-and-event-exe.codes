@@ -68,9 +68,10 @@ def collect_process_events():
                 process
             )
 
-            connections = get_connections(
-                process.pid
-            )
+            #connections = get_connections(
+            #    process.pid
+            #)
+            connections = []
 
             risk_score = 0
 
@@ -247,12 +248,14 @@ def collect_process_events():
                     process
                 ),
 
+
                 "is_powershell":
                 is_ps,
 
                 "network_stats":
-                get_network_stats(),
-
+                #get_network_stats(),
+                {},
+                
                 "network_connections":
                 connections,
 
